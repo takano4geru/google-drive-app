@@ -46,3 +46,6 @@ app.*.map.json
 
 # Sensitive configuration files
 /lib/config.dart
+
+# Xcode / SwiftPM
+**/xcshareddata/swiftpm/
