@@ -53,8 +53,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     // Listen for authentication changes dynamically
     _googleSignIn.onCurrentUserChanged.listen((GoogleSignInAccount? account) async {
       if (account != null) {
-        final client = await _googleSignIn.authenticatedClient();
-        state = AuthState(user: account, client: client, isLoading: false, isOfflineMode: false);
+        final hasScope = await _googleSignIn.canAccessScopes([drive.DriveApi.driveFileScope]);
+        if (hasScope) {
+          final client = await _googleSignIn.authenticatedClient();
+          state = AuthState(user: account, client: client, isLoading: false, isOfflineMode: false);
+        } else {
+          // Required scope is missing; do not provide the client yet
+          state = AuthState(user: account, client: null, isLoading: false, isOfflineMode: false);
+        }
       } else {
         state = state.copyWith(clearUser: true, clearClient: true, isLoading: false);
       }
@@ -78,9 +84,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
       final account = await _googleSignIn.signInSilently();
-      if (account == null) {
-        state = state.copyWith(isLoading: false);
+      if (account != null) {
+        final hasScope = await _googleSignIn.canAccessScopes([drive.DriveApi.driveFileScope]);
+        if (!hasScope) {
+          // If silent sign-in succeeded but lacks scope, log out to keep state consistent and clean
+          await _googleSignIn.signOut();
+        }
       }
+      state = state.copyWith(isLoading: false);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -93,9 +104,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
       final account = await _googleSignIn.signIn();
-      if (account == null) {
-        state = state.copyWith(isLoading: false);
+      if (account != null) {
+        final hasScope = await _googleSignIn.canAccessScopes([drive.DriveApi.driveFileScope]);
+        if (!hasScope) {
+          // Request scopes explicitly if missing after signing in
+          final success = await _googleSignIn.requestScopes([drive.DriveApi.driveFileScope]);
+          if (!success) {
+            // Cancel sign-in if the user denied scope authorization
+            await _googleSignIn.signOut();
+          }
+        }
       }
+      state = state.copyWith(isLoading: false);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
